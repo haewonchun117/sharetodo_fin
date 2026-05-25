@@ -300,15 +300,7 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-primary text-[10px] font-medium text-primary-foreground flex items-center justify-center">
-                3
-              </span>
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="h-5 w-5" />
-            </Button>
+
             <Link href="/login">
               <Button variant="ghost" size="icon">
                 <LogOut className="h-5 w-5" />
@@ -442,11 +434,8 @@ export default function DashboardPage() {
                               #{tag}
                             </Badge>
                           ))}
-                          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
-                            <Heart className="h-3 w-3" />
-                            {item.likes}
-                          </span>
                         </div>
+                        git
                       </div>
                     </div>
                   ))
