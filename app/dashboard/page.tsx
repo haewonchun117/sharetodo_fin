@@ -30,23 +30,28 @@ import {
 } from "recharts";
 import { supabase } from "@/lib/supabase";
 
+// 🌟 데이터 구조 정의 개편
 interface Todo {
   id: number;
   text: string;
   completed: boolean;
 }
 
-// 비슷한 관심사를 가진 사람들의 공유된 할 일
-const sharedFeed = [];
-
-interface Todo {
+interface SharedTodo {
   id: number;
+  userEmail: string;
   text: string;
   completed: boolean;
+  // 필요시 추가 UI용 더미 데이터 매핑용
+  avatar: string;
+  daysStreak: number;
+  tags: string[];
+  likes: number;
 }
 
 export default function DashboardPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [sharedTodos, setSharedTodos] = useState<SharedTodo[]>([]); // 🌟 다른 유저 데이터를 담을 공간 추가!
   const [newTodo, setNewTodo] = useState("");
   const [userEmail, setUserEmail] = useState("User");
   const [stats, setStats] = useState({
@@ -64,43 +69,67 @@ export default function DashboardPage() {
     { week: "5주", rate: 0 },
   ]);
 
-  // 1. 페이지 로드 시 유저 정보와 할 일 목록을 함께 가져오기
+  // 1. 데이터 불러오기 개편
   useEffect(() => {
     const getInitialData = async () => {
-      // [추가] 현재 로그인한 유저 정보 가져오기
+      // 현재 로그인한 유저 정보 가져오기
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user?.email) {
-        setUserEmail(user.email.split("@")[0]); // 이메일 아이디 부분 저장
+
+      if (!user) return; // 로그인 상태가 아니라면 데이터 호출 중단
+
+      if (user.email) {
+        setUserEmail(user.email.split("@")[0]);
       }
 
-      // useEffect 안의 fetch 부분
-      const { data, error } = await supabase
+      // 🔒 [A] 내 할 일만 가져오기
+      const { data: myData, error: myError } = await supabase
         .from("todos")
         .select("*")
+        .eq("user_id", user.id) // 🌟 내 유저 아이디 계정 정보만 필터링!
         .order("id", { ascending: true });
 
-      if (!error && data) {
-        const formattedTodos = data.map((t) => ({
+      if (!myError && myData) {
+        const formattedTodos = myData.map((t) => ({
           id: t.id,
-          text: t.content, // ⬅️ 여기를 t.title에서 t.content로 수정!
+          text: t.content,
           completed: t.is_completed,
         }));
         setTodos(formattedTodos);
+      }
+
+      // 🌍 [B] 비슷한 관심사 (다른 사람들의 할 일 피드) 가져오기
+      const { data: globalData, error: globalError } = await supabase
+        .from("todos")
+        .select("*")
+        .neq("user_id", user.id) // 🌟 내가 아닌 다른 유저들의 글 정보만 필터링!
+        .limit(10); // 개수 제한
+
+      if (!globalError && globalData) {
+        const formattedShared = globalData.map((t) => ({
+          id: t.id,
+          userEmail: "유저", // 데이터베이스에 작성자 정보가 있다면 매핑 가능
+          text: t.content,
+          completed: t.is_completed,
+          avatar: "U",
+          daysStreak: Math.floor(Math.random() * 5) + 1, // 테스트용 임시 랜덤 스트릭
+          tags: ["공부", "일상"], // 테스트용 임시 태그
+          likes: Math.floor(Math.random() * 10),
+        }));
+        setSharedTodos(formattedShared); // 🌟 상태에 할당!
       }
     };
 
     getInitialData();
   }, []);
 
-  // 2. [추가] todos가 변경될 때마다 통계 수치 실시간 업데이트 (경고 해결용)
+  // 2. 내 통계 계산 로직 (기존 유지)
   useEffect(() => {
     const total = todos.length;
     const completed = todos.filter((t) => t.completed).length;
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-    // 여기서 setStats와 setWeeklyData를 사용하여 경고를 해결합니다.
     setStats((prev) => ({
       ...prev,
       achievementRate: rate,
@@ -112,16 +141,23 @@ export default function DashboardPage() {
     );
   }, [todos]);
 
+  // 3. 내 할 일 추가하기 수정
   const addTodo = async () => {
     if (newTodo.trim()) {
       try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) return alert("로그인이 필요합니다.");
+
         const { data, error } = await supabase
           .from("todos")
           .insert([
             {
-              // 💡 image_9c050c.png에 적힌 컬럼명과 똑같이 맞췄습니다!
-              content: newTodo, // title 대신 content 사용
-              is_completed: false, // 다행히 이건 이름이 같네요
+              content: newTodo,
+              is_completed: false,
+              user_id: user.id, // 🌟 저장할 때 '내 ID'를 함께 명시해 주어야 나중에 내 것만 뽑아올 수 있습니다.
             },
           ])
           .select();
@@ -132,12 +168,11 @@ export default function DashboardPage() {
         }
 
         if (data) {
-          // 화면에 보여줄 때도 content 값을 가져오도록 수정
           setTodos([
             ...todos,
             {
               id: data[0].id,
-              text: data[0].content, // data[0].title 대신 content
+              text: data[0].content,
               completed: data[0].is_completed,
             },
           ]);
@@ -209,9 +244,8 @@ export default function DashboardPage() {
 
       {/* Main Content */}
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Top Section: Progress + Monthly Review */}
+        {/* Top Section */}
         <div className="mb-6 grid gap-6 lg:grid-cols-3">
-          {/* Circular Progress */}
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">이번 달 진행률</CardTitle>
@@ -225,7 +259,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Monthly Review */}
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm lg:col-span-2">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">월간 리뷰</CardTitle>
@@ -234,19 +267,17 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 <p className="text-muted-foreground">
                   이번 달 목표 달성률이{" "}
-                  {/* 숫자를 stats.achievementRate로 교체 */}
                   <span className="text-primary font-semibold">
                     {stats.achievementRate}%
-                  </span>
-                  로 지난달 대비 {/* 숫자를 stats.increaseRate로 교체 */}
+                  </span>{" "}
+                  로 지난달 대비{" "}
                   <span className="text-sky-500 font-semibold">
                     {stats.increaseRate}% 상승
-                  </span>
+                  </span>{" "}
                   했어요!
                 </p>
                 <div className="grid grid-cols-3 gap-4 pt-2">
                   <div className="text-center p-3 rounded-lg bg-secondary/30">
-                    {/* 숫자를 stats.completedCount로 교체 */}
                     <p className="text-2xl font-bold text-primary">
                       {stats.completedCount}
                     </p>
@@ -255,14 +286,12 @@ export default function DashboardPage() {
                     </p>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-secondary/30">
-                    {/* 숫자를 stats.maxStreak로 교체 */}
                     <p className="text-2xl font-bold text-sky-500">
                       {stats.maxStreak}
                     </p>
                     <p className="text-xs text-muted-foreground">최대 연속</p>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-secondary/30">
-                    {/* 숫자를 stats.friendCount로 교체 */}
                     <p className="text-2xl font-bold text-amber-500">
                       {stats.friendCount}
                     </p>
@@ -278,7 +307,7 @@ export default function DashboardPage() {
 
         {/* Middle Section: Feed + My Todos */}
         <div className="mb-6 grid gap-6 lg:grid-cols-3">
-          {/* Left: Shared Feed */}
+          {/* 🌍 Left: Shared Feed (하드코딩 배열 대신 sharedTodos 매핑) */}
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm lg:col-span-2 max-h-[500px] overflow-hidden flex flex-col">
             <CardHeader className="pb-2 shrink-0">
               <CardTitle className="text-lg">비슷한 관심사의 할 일</CardTitle>
@@ -288,61 +317,68 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="overflow-y-auto flex-1">
               <div className="space-y-3">
-                {sharedFeed.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center gap-4 p-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/30 transition-colors"
-                  >
-                    <Avatar className="h-10 w-10 shrink-0">
-                      <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                        {item.avatar}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-sm">{item.user}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {item.daysStreak}일 연속
-                        </span>
-                      </div>
-                      <p className="font-medium truncate">{item.title}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        {item.tags.map((tag) => (
-                          <Badge
-                            key={tag}
-                            variant="secondary"
-                            className="text-xs"
-                          >
-                            {tag}
-                          </Badge>
-                        ))}
-                        <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
-                          <Heart className="h-3 w-3" />
-                          {item.likes}
-                        </span>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-1 border-border/50 hover:bg-primary/10 hover:border-primary/50"
+                {sharedTodos.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    공유된 할 일이 없습니다.
+                  </p>
+                ) : (
+                  sharedTodos.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-4 p-3 rounded-lg border border-border/50 bg-background/50 hover:border-primary/30 transition-colors"
                     >
-                      <Plus className="h-3 w-3" />
-                      추가
-                    </Button>
-                  </div>
-                ))}
+                      <Avatar className="h-10 w-10 shrink-0">
+                        <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                          {item.avatar}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm">
+                            {item.userEmail}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {item.daysStreak}일 연속
+                          </span>
+                        </div>
+                        <p className="font-medium truncate">{item.text}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {item.tags.map((tag) => (
+                            <Badge
+                              key={tag}
+                              variant="secondary"
+                              className="text-xs"
+                            >
+                              {tag}
+                            </Badge>
+                          ))}
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 ml-auto">
+                            <Heart className="h-3 w-3" />
+                            {item.likes}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 gap-1 border-border/50 hover:bg-primary/10 hover:border-primary/50"
+                      >
+                        <Plus className="h-3 w-3" />
+                        추가
+                      </Button>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
 
-          {/* Right: My Todo List */}
+          {/* 🔒 Right: My Todo List */}
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm max-h-[500px] overflow-hidden flex flex-col">
             <CardHeader className="pb-2 shrink-0">
               <CardTitle className="text-lg">내 할 일</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3 overflow-hidden flex-1">
-              {/* Add Todo Input */}
               <div className="flex gap-2 shrink-0">
                 <Input
                   placeholder="새 할 일 입력..."
@@ -360,7 +396,6 @@ export default function DashboardPage() {
                 </Button>
               </div>
 
-              {/* Todo List */}
               <div className="space-y-2 overflow-y-auto flex-1">
                 {todos.map((todo) => (
                   <div
@@ -387,7 +422,6 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              {/* Progress Summary */}
               <div className="pt-2 border-t border-border/50 shrink-0">
                 <p className="text-sm text-muted-foreground text-center">
                   {completedCount}/{totalCount} 완료 ({progressPercent}%)
