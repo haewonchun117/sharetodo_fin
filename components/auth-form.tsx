@@ -120,14 +120,6 @@ export function AuthForm({ mode }: AuthFormProps) {
               <Label htmlFor="password" className="text-sm font-medium">
                 비밀번호
               </Label>
-              {mode === "login" && (
-                <Link
-                  href="#"
-                  className="text-xs text-primary hover:text-primary/80 transition-colors"
-                >
-                  비밀번호를 잊으셨나요?
-                </Link>
-              )}
             </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
