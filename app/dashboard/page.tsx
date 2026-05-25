@@ -448,14 +448,6 @@ export default function DashboardPage() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 gap-1 border-border/50 hover:bg-primary/10 hover:border-primary/50"
-                      >
-                        <Plus className="h-3 w-3" />
-                        추가
-                      </Button>
                     </div>
                   ))
                 )}
